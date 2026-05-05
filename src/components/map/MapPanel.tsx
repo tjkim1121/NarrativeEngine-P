@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store/useAppStore';
 import { OverworldCanvas } from './OverworldCanvas';
 import { Loader2, Map, X, RotateCcw, MapPin } from 'lucide-react';
+import type { GameContext } from '../../types';
 
 function hasValidCells(map: { cells?: unknown[]; width?: number; height?: number } | null): boolean {
     return !!(map && map.cells && map.cells.length > 0 && map.width && map.height);
@@ -86,6 +87,16 @@ export function MapPanel() {
                             <span className="text-text-dim text-[10px] uppercase tracking-widest font-bold">
                                 World Map
                             </span>
+                            <div className="flex items-center gap-2">
+                                <label className="text-[9px] text-text-dim/60 uppercase tracking-wider">Vibe</label>
+                                <input
+                                    type="text"
+                                    value={context.worldVibe ?? ''}
+                                    onChange={(e) => useAppStore.getState().updateContext({ worldVibe: e.target.value } as Partial<GameContext>)}
+                                    placeholder="e.g. Grimdark Fantasy..."
+                                    className="w-40 bg-surface border border-border px-2 py-0.5 text-[10px] font-mono text-text-primary focus:border-terminal outline-none transition-colors"
+                                />
+                            </div>
                             <div className="flex items-center gap-3">
                                 {overworldMap && (
                                     <span className="text-text-dim/60 text-[9px] font-mono">

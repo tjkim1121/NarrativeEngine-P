@@ -32,7 +32,6 @@ export type CharacterProfile = {
 export type PipelinePhase =
     | 'idle'
     | 'rolling-dice'
-    | 'ai-intervention'
     | 'gathering-context'
     | 'building-prompt'
     | 'generating'
@@ -72,9 +71,6 @@ export type AIPreset = {
     imageAI: EndpointConfig;
     summarizerAI: EndpointConfig;
     utilityAI?: EndpointConfig;
-    enemyAI?: EndpointConfig;
-    neutralAI?: EndpointConfig;
-    allyAI?: EndpointConfig;
     sampling?: SamplingConfig;
 };
 
@@ -86,6 +82,34 @@ export type ProviderConfig = {
     modelName: string;
 };
 
+export type DivergenceCategory =
+    | 'canon_override'
+    | 'world_change'
+    | 'entity_state'
+    | 'player_state'
+    | 'obligation';
+
+export type DivergenceEntry = {
+    id: string;
+    category: DivergenceCategory;
+    subject: string;
+    divergence: string;
+    sceneRef: string;
+    linkedSceneIds: string[];
+    importance: number;
+    supersedes?: string;
+    resolved?: boolean;
+    source: 'auto' | 'manual';
+    parseError?: boolean;
+};
+
+export type DivergenceRegister = {
+    entries: DivergenceEntry[];
+    lastUpdatedSceneId: string;
+    lastUpdatedAt: number;
+    version: number;
+};
+
 export type AppSettings = {
     presets: AIPreset[];
     activePresetId: string;
@@ -94,6 +118,8 @@ export type AppSettings = {
     theme?: 'light' | 'dark';
     showReasoning?: boolean;
     deepContextSearch?: boolean;
+    autoExtractDivergences?: boolean;
+    divergenceTokenBudget?: number;
 
     // Legacy fields kept for migration only
     providers?: ProviderConfig[];
@@ -180,19 +206,7 @@ export type GameContext = {
     sceneNoteDepth: number;
     surpriseConfig?: SurpriseConfig;
     encounterConfig?: EncounterConfig;
-    // --- AI Players (Enemy, Neutral, Ally) ---
-    worldVibe: string; // Global genre constraints (e.g. "Low fantasy, no magic")
-    enemyPlayerActive: boolean;
-    neutralPlayerActive: boolean;
-    allyPlayerActive: boolean;
-    enemyPlayerPrompt: string;
-    neutralPlayerPrompt: string;
-    allyPlayerPrompt: string;
-    interventionChance: number; // 0-100%
-    enemyCooldown: number;
-    neutralCooldown: number;
-    allyCooldown: number;
-    interventionQueue: ('enemy' | 'neutral' | 'ally')[];
+    worldVibe: string;
     notebook: NotebookNote[];
     notebookActive: boolean;
 };
@@ -219,6 +233,7 @@ export type ChatMessage = {
     tool_call_id?: string;
     reasoning_content?: string;
     ephemeral?: boolean;
+    divergenceIds?: string[];
 };
 
 /** @deprecated — replaced by ArchiveIndexEntry + ArchiveScene. Kept for backwards-compat migration. */
@@ -640,17 +655,6 @@ export function migrateLegacyContext(ctx: Partial<GameContext>): GameContext {
         notebook: [],
         notebookActive: true,
         worldVibe: '',
-        enemyPlayerActive: false,
-        neutralPlayerActive: false,
-        allyPlayerActive: false,
-        enemyPlayerPrompt: '',
-        neutralPlayerPrompt: '',
-        allyPlayerPrompt: '',
-        interventionChance: 25,
-        enemyCooldown: 2,
-        neutralCooldown: 2,
-        allyCooldown: 2,
-        interventionQueue: [],
         worldEventConfig: {
             initialDC: 498,
             dcReduction: 2,

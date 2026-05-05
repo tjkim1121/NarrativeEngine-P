@@ -1,10 +1,9 @@
-import type { AppSettings, GameContext, ChatMessage, NPCEntry, LoreChunk, CondenserState, ArchiveIndexEntry, TimelineEvent, EndpointConfig, ProviderConfig, ArchiveChapter, SamplingConfig, PipelinePhase } from '../types';
+import type { AppSettings, GameContext, ChatMessage, NPCEntry, LoreChunk, CondenserState, ArchiveIndexEntry, TimelineEvent, EndpointConfig, ProviderConfig, ArchiveChapter, SamplingConfig, PipelinePhase, DivergenceRegister } from '../types';
 import { uid } from '../utils/uid';
 import { buildPayload, sendMessage } from './chatEngine';
 import { rollEngines, rollDiceFairness } from './engineRolls';
 import { toast } from '../components/Toast';
 import { sanitizePayloadForApi } from './lib/payloadSanitizer';
-import { handleInterventions } from './aiPlayerEngine';
 import { TOOL_DEFINITIONS, handleLoreTool, handleNotebookTool } from './toolHandlers';
 import { gatherContext } from './contextGatherer';
 import { runPostTurnPipeline } from './postTurnPipeline';
@@ -25,6 +24,8 @@ export type TurnCallbacks = {
     setLastPayloadTrace?: (trace: any) => void;
     setLoadingStatus?: (status: string | null) => void;
     setPipelinePhase?: (phase: PipelinePhase) => void;
+    setDivergenceRegister?: (register: DivergenceRegister) => void;
+    updateMessageDivergence?: (messageId: string, divergenceIds: string[]) => void;
 };
 
 export type TurnState = {
@@ -41,8 +42,7 @@ export type TurnState = {
     provider: EndpointConfig | ProviderConfig | undefined;
     getMessages: () => ChatMessage[]; // to get fresh messages midway
     getFreshProvider: () => EndpointConfig | ProviderConfig | undefined;
-    getUtilityEndpoint?: () => EndpointConfig | undefined; // optional — context recommender
-    forcedInterventions?: ('enemy' | 'neutral' | 'ally')[]; // For manual triggers from UI
+    getUtilityEndpoint?: () => EndpointConfig | undefined;
     timeline?: TimelineEvent[];
     // Phase 2B: store-lifted fields (eliminate useAppStore.getState() inside runTurn)
     chapters: ArchiveChapter[];
@@ -55,6 +55,7 @@ export type TurnState = {
     getFreshContext: () => GameContext;
     sampling?: SamplingConfig;
     deepSearchThisTurn?: boolean;
+    divergenceRegister?: DivergenceRegister;
 };
 
 
@@ -74,10 +75,6 @@ export async function runTurn(
     callbacks.updateContext(engineResult.updatedDCs);
     const historyInput = finalInput;
     finalInput += rollDiceFairness(context);
-    
-    // --- AI INTERVENTION PHASE (Enemy, Neutral, Ally) ---
-    callbacks.setPipelinePhase?.('ai-intervention');
-    await handleInterventions(state, callbacks, finalInput, abortController);
 
     // Provide immediate UI feedback by adding the user message synchronously before heavy async operations
     const userMsgId = uid();

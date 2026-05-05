@@ -2,7 +2,6 @@ import type { PipelinePhase, StreamingStats } from '../types';
 
 const STEPS: { phase: PipelinePhase; label: string }[] = [
     { phase: 'rolling-dice', label: 'Dice' },
-    { phase: 'ai-intervention', label: 'AI Turn' },
     { phase: 'gathering-context', label: 'Context' },
     { phase: 'building-prompt', label: 'Prompt' },
     { phase: 'generating', label: 'Generating' },
@@ -12,12 +11,11 @@ const STEPS: { phase: PipelinePhase; label: string }[] = [
 const PHASE_INDEX: Record<PipelinePhase, number> = {
     'idle': -1,
     'rolling-dice': 0,
-    'ai-intervention': 1,
-    'gathering-context': 2,
-    'building-prompt': 3,
-    'generating': 4,
-    'checking-notes': 4,
-    'post-processing': 5,
+    'gathering-context': 1,
+    'building-prompt': 2,
+    'generating': 3,
+    'checking-notes': 3,
+    'post-processing': 4,
 };
 
 function formatElapsed(ms: number): string {

@@ -39,8 +39,6 @@ const baseContext = (): GameContext => ({
     continuePrompt: '',
     inventory: '',
     characterProfile: '',
-    interventionQueue: [],
-    interventionChance: 0,
     notebook: [],
 } as unknown as GameContext);
 
