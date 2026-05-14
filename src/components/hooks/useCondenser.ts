@@ -1,9 +1,8 @@
-import { useRef, useEffect, useState } from 'react';
-import { condenseHistory, shouldCondense } from '../../services/condenser';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { condenseHistory, shouldCondense, getCondenseBudgetRatio } from '../../services/condenser';
 import { runSaveFilePipeline } from '../../services/saveFileEngine';
 import { api } from '../../services/apiClient';
 import { toast } from '../Toast';
-import { extractFromMessageBatch, buildSceneMap, mergeEntries } from '../../services/divergenceRegister';
 import { useAppStore } from '../../store/useAppStore';
 import type { ChatMessage, CondenserState, EndpointConfig, ProviderConfig, GameContext, NPCEntry, AppSettings, ArchiveIndexEntry } from '../../types';
 
@@ -27,30 +26,29 @@ interface UseCondenserDeps {
 
 export function useCondenser(deps: UseCondenserDeps) {
     const condenseAbortRef = useRef<AbortController | null>(null);
-    const [condensePhase, setCondensePhase] = useState<'save' | 'extract' | 'compress' | null>(null);
+    const [condensePhase, setCondensePhase] = useState<'save' | 'compress' | null>(null);
+    const lastCondenseTimeRef = useRef<number>(0);
+    const COOLDOWN_MS = 5000;
 
     useEffect(() => {
         if (deps.isStreaming || deps.condenser.isCondensing || !deps.activeCampaignId) return;
-        if (shouldCondense(deps.messages, deps.settings.contextLimit, deps.condenser.condensedUpToIndex)) {
+        if (!(deps.settings.autoCondenseEnabled ?? true)) return;
+        if (Date.now() - lastCondenseTimeRef.current < COOLDOWN_MS) return;
+
+        const budgetRatio = getCondenseBudgetRatio(deps.settings.condenseAggressiveness ?? 'smart');
+        if (shouldCondense(deps.messages, deps.settings.contextLimit, deps.condenser.condensedUpToIndex, budgetRatio)) {
+            lastCondenseTimeRef.current = Date.now();
             triggerCondense();
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deps.isStreaming, deps.messages.length]);
+    }, [deps.isStreaming, deps.messages.length, deps.condenser.isCondensing, deps.condenser.condensedUpToIndex, deps.activeCampaignId, deps.settings.autoCondenseEnabled, deps.settings.condenseAggressiveness]);
 
-    const triggerCondense = async () => {
-        if (deps.condenser.isCondensing) {
-            if (condenseAbortRef.current) {
-                condenseAbortRef.current.abort();
-                condenseAbortRef.current = null;
-            }
-            deps.setCondensing(false);
-            setCondensePhase(null);
-            deps.setLoadingStatus(null);
-            toast.info('Condense cancelled');
-            return;
-        }
+    const triggerCondense = useCallback(async () => {
+        if (deps.condenser.isCondensing) return;
+
         condenseAbortRef.current = new AbortController();
         deps.setCondensing(true);
+        lastCondenseTimeRef.current = Date.now();
         setCondensePhase('save');
         try {
             const provider = deps.getActiveSummarizerEndpoint?.()
@@ -73,48 +71,9 @@ export function useCondenser(deps: UseCondenserDeps) {
             const npcLedger = deps.getNpcLedger();
             const campaignId = deps.activeCampaignId || '';
 
-            // --- BATCH DIVERGENCE EXTRACTION ---
-            setCondensePhase('extract');
-            deps.setLoadingStatus('Scanning for divergences...');
-            try {
-                if (campaignId) {
-                    const freshIndex = await api.archive.getIndex(campaignId);
-                    const { sceneIdsByMessageId } = buildSceneMap(freshIndex, uncondensed);
-                    
-                    const { divergenceRegister, setDivergenceRegister } = useAppStore.getState();
-                    const divergenceBudget = Math.floor(deps.settings.contextLimit * 0.45);
-                    
-                    const extractResult = await extractFromMessageBatch(
-                        provider as EndpointConfig,
-                        uncondensed,
-                        sceneIdsByMessageId,
-                        divergenceRegister,
-                        deps.settings.contextLimit,
-                        condenseAbortRef.current?.signal,
-                        divergenceBudget
-                    );
-                    
-                    if (extractResult.newEntries.length > 0) {
-                        const merged = mergeEntries(divergenceRegister, extractResult.newEntries, freshIndex[freshIndex.length - 1]?.sceneId || '000');
-                        setDivergenceRegister(merged);
-                        
-                        const { saveDivergenceRegister } = await import('../../store/campaignStore');
-                        await saveDivergenceRegister(campaignId, merged);
-                        
-                        if (extractResult.parseFailures > 0) {
-                            toast.warning(`Extracted ${extractResult.newEntries.length} divergences (${extractResult.parseFailures} parse errors)`);
-                        } else {
-                            toast.success(`Extracted ${extractResult.newEntries.length} divergences`);
-                        }
-                    }
-                }
-            } catch (extErr) {
-                if (extErr instanceof Error && extErr.name === 'AbortError') throw extErr;
-                console.error('[Condenser] Divergence extraction failed (non-fatal):', extErr);
-            }
-
-            // --- COMPRESS HISTORY ---
             setCondensePhase('compress');
+
+            const budgetRatio = getCondenseBudgetRatio(deps.settings.condenseAggressiveness ?? 'smart');
 
             let runningUpToIndex = deps.condenser.condensedUpToIndex;
             let runningSummary = deps.condenser.condensedSummary;
@@ -133,13 +92,14 @@ export function useCondenser(deps: UseCondenserDeps) {
                     campaignId,
                     npcLedger.map(n => n.name),
                     deps.settings.contextLimit,
-                    condenseAbortRef.current?.signal
+                    condenseAbortRef.current?.signal,
+                    budgetRatio
                 );
                 if (result.upToIndex <= runningUpToIndex) break;
                 runningUpToIndex = result.upToIndex;
                 runningSummary = result.summary;
                 deps.setCondensed(result.summary, result.upToIndex);
-            } while (passes < MAX_PASSES && shouldCondense(deps.messages, deps.settings.contextLimit, runningUpToIndex));
+            } while (passes < MAX_PASSES && shouldCondense(deps.messages, deps.settings.contextLimit, runningUpToIndex, budgetRatio));
             console.log(`[Condenser] Done — ${passes} pass(es), condensed up to index ${runningUpToIndex}`);
 
             if (campaignId) {
@@ -161,12 +121,14 @@ export function useCondenser(deps: UseCondenserDeps) {
             console.error('[Condenser]', err);
             toast.error('Condenser failed — history was not compressed');
         } finally {
+            lastCondenseTimeRef.current = Date.now();
             deps.setCondensing(false);
             setCondensePhase(null);
             deps.setLoadingStatus(null);
             condenseAbortRef.current = null;
         }
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deps.activeCampaignId, deps.condenser.condensedUpToIndex, deps.condenser.condensedSummary, deps.condenser.isCondensing]);
 
     return { triggerCondense, condenseAbortRef, condensePhase };
 }

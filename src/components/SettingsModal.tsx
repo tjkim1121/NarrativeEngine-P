@@ -511,6 +511,63 @@ export function SettingsModal() {
                             </div>
                         </div>
 
+                        {/* Auto-Trim (Auto-Condense) */}
+                        <div className="bg-void p-3 border border-border rounded space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <label className="block text-[11px] text-text-primary uppercase tracking-wider font-bold mb-1">
+                                        Auto-Trim
+                                    </label>
+                                    <p className="text-[9px] text-text-dim max-w-[240px] leading-tight">
+                                        Automatically condense history when it exceeds a token budget. Prevents context overflow without manual intervention.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => updateSettings({ autoCondenseEnabled: !(settings.autoCondenseEnabled ?? true) })}
+                                    className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none ${(settings.autoCondenseEnabled ?? true) ? 'bg-terminal' : 'bg-border'}`}
+                                >
+                                    <div className={`absolute top-[2px] w-4 h-4 rounded-full bg-surface transition-transform ${(settings.autoCondenseEnabled ?? true) ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
+                                </button>
+                            </div>
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] text-text-dim uppercase tracking-wider">
+                                        Aggressiveness
+                                    </label>
+                                    <span className="text-terminal font-bold font-mono bg-terminal/10 px-2 py-0.5 rounded text-[10px]">
+                                        {(() => {
+                                            const a = settings.condenseAggressiveness ?? 'smart';
+                                            if (a === 'tight') return 'Tight (50%)';
+                                            if (a === 'deep') return 'Deep (90%)';
+                                            return 'Smart (75%)';
+                                        })()}
+                                    </span>
+                                </div>
+                                <div className="flex border border-border overflow-hidden rounded">
+                                    {(['tight', 'smart', 'deep'] as const).map(level => (
+                                        <button
+                                            key={level}
+                                            onClick={() => updateSettings({ condenseAggressiveness: level })}
+                                            className={`flex-1 px-3 py-2 text-[10px] uppercase tracking-wider transition-colors focus:outline-none ${(settings.condenseAggressiveness ?? 'smart') === level
+                                                ? 'bg-terminal text-void font-bold'
+                                                : 'bg-void text-text-dim hover:text-text-primary'
+                                            }`}
+                                        >
+                                            {level === 'tight' ? 'Tight' : level === 'smart' ? 'Smart' : 'Deep'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[8px] text-text-dim mt-1.5 leading-tight">
+                                    {(() => {
+                                        const a = settings.condenseAggressiveness ?? 'smart';
+                                        if (a === 'tight') return 'Condenses early at 50% budget — smaller context, more frequent compression.';
+                                        if (a === 'deep') return 'Condenses only at 90% budget — maximum context before compression.';
+                                        return 'Balanced — condenses at 75% budget threshold.';
+                                    })()}
+                                </p>
+                            </div>
+                        </div>
+
                         {/* Theme */}
                         <div className="flex items-center justify-between bg-void p-3 border border-border rounded">
                             <label className="text-[11px] text-text-primary uppercase tracking-wider font-bold">

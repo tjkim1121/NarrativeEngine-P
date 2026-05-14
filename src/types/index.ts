@@ -102,41 +102,34 @@ export type ProviderConfig = {
 };
 
 export type DivergenceCategory =
-    | 'canon_override'
-    | 'world_change'
-    | 'entity_state'
-    | 'player_state'
-    | 'obligation';
+    | 'locations'
+    | 'npc_events'
+    | 'promises_debts'
+    | 'world_state'
+    | 'party_facts'
+    | 'rules_lore'
+    | 'misc';
 
 export type DivergenceEntry = {
     id: string;
-    category: DivergenceCategory;
-    subject: string;
-    divergence: string;
-    sceneRef: string;
-    linkedSceneIds: string[];
-    importance: number;
-    supersedes?: string;
-    resolved?: boolean;
-    source: 'auto' | 'manual';
-    parseError?: boolean;
-    reviewFlag?: boolean;
-};
-
-export type PrunedEntry = {
-    originalEntry: DivergenceEntry;
-    prunedAt: number;
     chapterId: string;
-    verdict: 'auto_pruned' | 'user_deleted_review';
-    reason: string;
+    category: DivergenceCategory;
+    text: string;
+    sceneRef: string;
+    npcIds: string[];
+    pinned: boolean;
+    source: 'auto' | 'manual';
+    reviewFlag?: boolean;
+    unrecognizedNpcNames?: string[];
 };
 
 export type DivergenceRegister = {
     entries: DivergenceEntry[];
-    prunedLog: PrunedEntry[];
+    chapterToggles: Record<string, boolean>;
+    categoryToggles: Record<string, Record<DivergenceCategory, boolean>>;
     lastUpdatedSceneId: string;
     lastUpdatedAt: number;
-    version: number;
+    version: 2;
 };
 
 export type AppSettings = {
@@ -149,6 +142,8 @@ export type AppSettings = {
     deepContextSearch?: boolean;
     autoExtractDivergences?: boolean;
     divergenceTokenBudget?: number;
+    autoCondenseEnabled?: boolean;
+    condenseAggressiveness?: 'tight' | 'smart' | 'deep';
 
     // Legacy fields kept for migration only
     providers?: ProviderConfig[];
@@ -262,7 +257,6 @@ export type ChatMessage = {
     tool_call_id?: string;
     reasoning_content?: string;
     ephemeral?: boolean;
-    divergenceIds?: string[];
 };
 
 /** @deprecated — replaced by ArchiveIndexEntry + ArchiveScene. Kept for backwards-compat migration. */
@@ -479,20 +473,21 @@ export type EntityEntry = {
 export const CHAPTER_SCENE_SOFT_CAP = 25;
 
 export type ArchiveChapter = {
-    chapterId: string;            // "CH01"
-    title: string;                // Auto-generated or user-edited
-    sceneRange: [string, string]; // ["001", "023"] — inclusive
-    summary: string;              // LLM-generated on seal (empty if unsealed)
-    keywords: string[];           // Aggregated + deduped from child scenes
-    npcs: string[];               // Aggregated from child scenes
-    majorEvents: string[];        // Key beats from header index
-    unresolvedThreads: string[];  // Carried from header index Section 2
-    tone: string;                 // "combat-heavy", "exploration", "social", etc.
-    themes: string[];             // Thematic tags
-    sceneCount: number;           // Number of scenes in range
-    sealedAt?: number;            // undefined = open chapter
-    invalidated?: boolean;        // true = summary stale due to rollback, needs re-gen
-    _lastSeenSessionId?: string;  // Internal: for auto-seal session boundary detection
+    chapterId: string;
+    title: string;
+    sceneRange: [string, string];
+    sceneIds: string[];
+    summary: string;
+    keywords: string[];
+    npcs: string[];
+    majorEvents: string[];
+    unresolvedThreads: string[];
+    tone: string;
+    themes: string[];
+    sceneCount: number;
+    sealedAt?: number;
+    invalidated?: boolean;
+    _lastSeenSessionId?: string;
 };
 
 export type BackupMeta = {

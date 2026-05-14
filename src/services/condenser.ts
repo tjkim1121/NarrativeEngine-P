@@ -4,14 +4,22 @@ import { getChatUrl, buildChatHeaders, buildChatBody, extractContent, getApiForm
 import { countTokens } from './tokenizer';
 
 const VERBATIM_WINDOW = 8;
-const CONDENSE_BUDGET_RATIO = 0.85;
 const META_SUMMARY_THRESHOLD = 6000;
-const MIN_CANDIDATE_MESSAGES = 3; // minimum new messages beyond verbatim window to justify a condense pass
+const MIN_CANDIDATE_MESSAGES = 3;
+
+export function getCondenseBudgetRatio(strategy: string): number {
+    switch (strategy) {
+        case 'tight': return 0.5;
+        case 'deep': return 0.90;
+        default: return 0.75;
+    }
+}
 
 export function shouldCondense(
     messages: ChatMessage[],
     contextLimit: number,
-    condensedUpToIndex: number
+    condensedUpToIndex: number,
+    budgetRatio: number = 0.85
 ): boolean {
     const uncondensedMessages = messages.slice(condensedUpToIndex + 1);
     if (uncondensedMessages.length <= VERBATIM_WINDOW) return false;
@@ -19,7 +27,7 @@ export function shouldCondense(
     const historyTokens = countTokens(
         uncondensedMessages.map((m) => m.content).join('')
     );
-    return historyTokens > contextLimit * CONDENSE_BUDGET_RATIO;
+    return historyTokens > contextLimit * budgetRatio;
 }
 
 export function getVerbatimWindow(): number {
@@ -85,7 +93,8 @@ export async function condenseHistory(
     _campaignId: string,
     _npcNames: string[],
     contextLimit: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    budgetRatio: number = 0.85
 ): Promise<{ summary: string; upToIndex: number }> {
     const uncondensed = messages.slice(condensedUpToIndex + 1);
     const candidateToCondense = uncondensed.slice(0, -VERBATIM_WINDOW);
@@ -99,7 +108,7 @@ export async function condenseHistory(
     const format = getApiFormat(provider);
 
     // --- Step 1: Compress new turns only (no existing summary in prompt) ---
-    const budgetLimit = Math.floor(contextLimit * CONDENSE_BUDGET_RATIO);
+    const budgetLimit = Math.floor(contextLimit * budgetRatio);
     const basePromptPart = buildCondenserPrompt([], context.canonState, context.headerIndex);
     const baseTokens = countTokens(basePromptPart);
 

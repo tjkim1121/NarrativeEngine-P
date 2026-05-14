@@ -28,6 +28,8 @@ vi.mock('../../store/useAppStore', () => {
             contextLimit: 4096,
             debugMode: false,
             showReasoning: true,
+            autoCondenseEnabled: true,
+            condenseAggressiveness: 'smart' as const,
         } as unknown as AppSettings,
         loreChunks: [],
         npcLedger: [],
@@ -61,6 +63,23 @@ vi.mock('../../store/useAppStore', () => {
         getActiveStoryEndpoint: vi.fn(() => ({ endpoint: 'http://test', apiKey: 'k', modelName: 'm' })),
         getActiveUtilityEndpoint: vi.fn(() => undefined),
         getActiveSummarizerEndpoint: vi.fn(() => undefined),
+        getActivePreset: vi.fn(() => undefined),
+        setDivergenceRegister: vi.fn(),
+        toggleDivergenceChapter: vi.fn(),
+        toggleDivergenceCategory: vi.fn(),
+        pinDivergenceFact: vi.fn(),
+        editDivergenceFact: vi.fn(),
+        deleteDivergenceFact: vi.fn(),
+        dismissDivergenceReviewFlag: vi.fn(),
+        confirmReviewEntry: vi.fn(),
+        divergenceRegister: { entries: [], chapterToggles: {}, categoryToggles: {}, lastUpdatedSceneId: '', lastUpdatedAt: 0, version: 2 },
+        pipelinePhase: 'idle' as const,
+        streamingStats: null,
+        setPipelinePhase: vi.fn(),
+        setStreamingStats: vi.fn(),
+        setStreaming: vi.fn(),
+        toggleDrawer: vi.fn(),
+        drawerOpen: false,
     };
     const subscribe = vi.fn(() => vi.fn());
     const getState = vi.fn(() => state);
@@ -81,6 +100,7 @@ vi.mock('../../services/turnOrchestrator', () => ({
 vi.mock('../../services/condenser', () => ({
     condenseHistory: vi.fn(async () => ({ summary: 'test summary', upToIndex: 2 })),
     shouldCondense: vi.fn(() => false),
+    getCondenseBudgetRatio: vi.fn(() => 0.75),
 }));
 
 vi.mock('../../services/saveFileEngine', () => ({
@@ -126,7 +146,7 @@ vi.mock('../../services/archiveChapterEngine', () => ({
 
 import { useAppStore } from '../../store/useAppStore';
 import { runTurn } from '../../services/turnOrchestrator';
-import { condenseHistory, shouldCondense } from '../../services/condenser';
+import { condenseHistory, shouldCondense, getCondenseBudgetRatio } from '../../services/condenser';
 import { set as idbSet } from 'idb-keyval';
 import { api } from '../../services/apiClient';
 import { shouldAutoSeal } from '../../services/archiveChapterEngine';
@@ -276,6 +296,7 @@ describe('ChatArea', () => {
             makeMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg ${i}` })
         );
         state.condenser = { condensedSummary: '', condensedUpToIndex: -1, isCondensing: false };
+        state.settings.autoCondenseEnabled = false;
         render(<ChatArea />);
         const condenseBtn = screen.getByText('Condense').closest('button')!;
         await user.click(condenseBtn);
@@ -284,15 +305,21 @@ describe('ChatArea', () => {
         });
     });
 
-    it('auto-condense fires when shouldCondense returns true', async () => {
+    it('auto-condense fires when shouldCondense returns true and enabled', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(Date, 'now').mockReturnValue(100000);
         (shouldCondense as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        (getCondenseBudgetRatio as ReturnType<typeof vi.fn>).mockReturnValue(0.75);
         const state = useAppStore.getState();
         state.messages = Array.from({ length: 20 }, (_, i) =>
             makeMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg ${i}` })
         );
+        state.settings.autoCondenseEnabled = true;
+        state.settings.condenseAggressiveness = 'smart';
         render(<ChatArea />);
-        await waitFor(() => {
-            expect(condenseHistory).toHaveBeenCalled();
-        });
+        await vi.advanceTimersByTimeAsync(100);
+        await vi.runAllTimersAsync();
+        expect(condenseHistory).toHaveBeenCalled();
+        vi.useRealTimers();
     });
 });
