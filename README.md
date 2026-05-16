@@ -4,6 +4,8 @@ Your AI Dungeon Master. A self-hosted TTRPG engine that runs extended, multi-ses
 
 No cloud. No subscription. Your campaigns stay on your machine.
 
+ANDROID VERSION: https://github.com/Sagesheep/NarrativeEngine-M/releases/tag/v.1.1.8
+
 ---
 
 ## Getting Started
