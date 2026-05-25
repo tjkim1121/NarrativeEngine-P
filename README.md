@@ -20,6 +20,8 @@ ANDROID VERSION: https://github.com/Sagesheep/NarrativeEngine-M/releases/tag/v.1
 
    **Windows** — just double-click `Start_Narrative_Engine.bat`
 
+   **Linux** — just run `start.sh`
+
    **Or manually:**
    ```
    npm install
@@ -241,6 +243,7 @@ Works great with Ollama for fully local play — no internet required after setu
 | Action | Command |
 |---|---|
 | Install & run (Windows) | Double-click `Start_Narrative_Engine.bat` |
+| Install & run (Linux) | Run `start.sh` |
 | Install manually | `npm install` |
 | Start the app | `npm run dev` |
 | Run tests | `npm run test` |
