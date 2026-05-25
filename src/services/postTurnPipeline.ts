@@ -199,6 +199,14 @@ export async function runCombinedSeal(
         aliases: n.aliases,
     }));
 
+    const archiveIndex = useAppStore.getState().archiveIndex ?? [];
+    const indexEntries = archiveIndex
+        .filter(e => {
+            const sn = parseInt(e.sceneId, 10);
+            return sn >= startNum && sn <= endNum && e.witnesses && e.witnesses.length > 0;
+        })
+        .map(e => ({ sceneId: e.sceneId, witnesses: e.witnesses }));
+
     const scanBudgetSetting = useAppStore.getState().settings.divergenceScanBudget ?? 0;
     const contextLimit = useAppStore.getState().settings.contextLimit ?? 4096;
     const effectiveScanBudget = scanBudgetSetting > 0 ? scanBudgetSetting : Math.round(contextLimit * 0.75);
@@ -211,7 +219,8 @@ export async function runCombinedSeal(
         sceneIds,
         npcData,
         2,
-        effectiveScanBudget
+        effectiveScanBudget,
+        indexEntries.length > 0 ? indexEntries : undefined
     );
 
     if (result.divergenceParseError && !result.summary && !result.divergences.length) {
@@ -251,6 +260,27 @@ export async function runCombinedSeal(
         }
 
         console.log(`[CombinedSeal] Chapter ${chapter.chapterId}: ${result.divergences.length} facts extracted`);
+    }
+
+    // ── Apply witness corrections from seal audit ──
+    if (result.witnessCorrections && Object.keys(result.witnessCorrections).length > 0) {
+        try {
+            const corrections = result.witnessCorrections;
+            const patchPayload: { sceneId: string; witnesses: string[]; witnessSource: string }[] = [];
+            for (const [sceneId, names] of Object.entries(corrections)) {
+                if (names.length > 0) {
+                    patchPayload.push({ sceneId, witnesses: names, witnessSource: 'seal_correction' });
+                }
+            }
+            if (patchPayload.length > 0) {
+                await api.archive.patchWitnesses(activeCampaignId, patchPayload);
+                const freshIndex = await api.archive.getIndex(activeCampaignId);
+                callbacks.setArchiveIndex(freshIndex);
+                console.log(`[CombinedSeal] Applied witness corrections for ${Object.keys(corrections).length} scenes`);
+            }
+        } catch (e) {
+            console.warn('[CombinedSeal] Failed to apply witness corrections:', e);
+        }
     }
 
     const latestChapters = await api.chapters.list(activeCampaignId);

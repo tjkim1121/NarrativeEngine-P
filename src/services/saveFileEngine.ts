@@ -396,13 +396,15 @@ export type CombinedSealResult = {
     summary: ChapterSummaryOutput | null;
     divergences: DivergenceEntry[];
     divergenceParseError?: boolean;
+    witnessCorrections?: Record<string, string[]>;
 };
 
 function buildCombinedSealPrompt(
     scenes: { sceneId: string; content: string }[],
     chapterTitle: string,
     sceneIds: string[],
-    npcLedger: { id: string; name: string; aliases: string }[]
+    npcLedger: { id: string; name: string; aliases: string }[],
+    indexEntries?: { sceneId: string; witnesses?: string[] }[]
 ): string {
     const truncated = truncateScenesToBudget(scenes, COMBINED_SEAL_TOKEN_BUDGET);
     const sceneContent = truncated.map(s => `--- SCENE ${s.sceneId} ---\n${s.content}`).join('\n\n');
@@ -414,6 +416,24 @@ function buildCombinedSealPrompt(
     const divergenceSlots = DIVERGENCE_CATEGORIES.filter(c => c !== 'misc').map(c =>
         `### ${c.toUpperCase()}\nDefinition: ${CATEGORY_DEFINITIONS[c]}\nOutput: JSON array for this slot, or [] if empty.`
     ).join('\n\n');
+
+    let witnessAuditSection = '';
+    if (indexEntries && indexEntries.length > 0) {
+        const entriesWithWitness = indexEntries.filter(e => e.witnesses && e.witnesses.length > 0);
+        if (entriesWithWitness.length > 0) {
+            const rows = entriesWithWitness.map(e =>
+                `Scene ${e.sceneId}: ${(e.witnesses ?? []).join(', ') || '(none recorded)'}`
+            ).join('\n');
+            witnessAuditSection = `
+
+AUDIT — PER-SCENE NPC WITNESSES (pre-capture):
+The following per-scene witness data was captured during play. Review it for accuracy.
+If you find that a scene's witnesses are incorrect (NPCs listed who were NOT present, or NPCs present who are NOT listed),
+provide corrections in the "witness_corrections" field.
+
+${rows}`;
+        }
+    }
 
     return `You are a TTRPG campaign archivist. Perform TWO tasks in a single response:
 
@@ -428,8 +448,9 @@ ${npcList || '(no NPCs in ledger)'}
 
 SCENE CONTENT:
 ${sceneContent}
+${witnessAuditSection}
 
-OUTPUT FORMAT — a single JSON object with exactly two top-level keys: "summary" and "divergences".
+${witnessAuditSection ? 'OUTPUT FORMAT — a single JSON object with two or three top-level keys: "summary", "divergences", and optionally "witness_corrections" (if you found errors in the per-scene witness data above).' : 'OUTPUT FORMAT — a single JSON object with exactly two top-level keys: "summary" and "divergences".'}
 
 The "summary" value must be this JSON shape:
 {
@@ -457,6 +478,11 @@ The "divergences" value must be an object with one key per category slot. Each v
     "rules_lore": [],
     "misc": []
 }
+${witnessAuditSection ? `
+WITNESS CORRECTIONS:
+If you found errors in the per-scene witness data above, include a "witness_corrections" key at the top level of the JSON:
+"witness_corrections": { "014": ["Aldric", "Borric"], "022": ["Morrigan"] }
+This maps scene IDs to the CORRECT list of NPC NAMES who were physically present in that scene. Only include scenes where you disagree with the pre-captured data.` : ''}
 
 Category definitions:
 
@@ -482,6 +508,26 @@ SUMMARY RULES:
 4. Unresolved threads are open plot hooks, promises, or mysteries
 5. Title should be 2-5 words, evocative
 6. Summary should read like a campaign journal entry, not a list`;
+}
+
+function extractWitnessCorrections(parsed: object): Record<string, string[]> | undefined {
+    const p = parsed as Record<string, unknown>;
+    const rawCorrections =
+        p['witness_corrections'] ??
+        ((p['divergences'] as Record<string, unknown> | undefined)?.['witness_corrections']);
+    if (rawCorrections && typeof rawCorrections === 'object' && !Array.isArray(rawCorrections)) {
+        const corrections: Record<string, string[]> = {};
+        for (const [sceneId, value] of Object.entries(rawCorrections as Record<string, unknown>)) {
+            if (Array.isArray(value) && value.every((v: unknown) => typeof v === 'string')) {
+                corrections[sceneId] = value as string[];
+            }
+        }
+        if (Object.keys(corrections).length > 0) {
+            console.log(`[CombinedSeal] Extracted witness corrections for ${Object.keys(corrections).length} scenes`);
+            return corrections;
+        }
+    }
+    return undefined;
 }
 
 export function parseCombinedSealOutput(
@@ -605,7 +651,9 @@ export function parseCombinedSealOutput(
         divergenceParseError = true;
     }
 
-    return { summary, divergences: entries, divergenceParseError: divergenceParseError || undefined };
+    const witnessCorrections = extractWitnessCorrections(parsed);
+
+    return { summary, divergences: entries, divergenceParseError: divergenceParseError || undefined, witnessCorrections };
 }
 
 export async function sealChapterCombined(
@@ -616,10 +664,11 @@ export async function sealChapterCombined(
     sceneIds: string[],
     npcLedger: { id: string; name: string; aliases: string }[],
     maxRetries = 2,
-    scanBudget = 0
+    scanBudget = 0,
+    indexEntries?: { sceneId: string; witnesses?: string[] }[]
 ): Promise<CombinedSealResult> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        const prompt = buildCombinedSealPrompt(scenes, chapterTitle, sceneIds, npcLedger);
+        const prompt = buildCombinedSealPrompt(scenes, chapterTitle, sceneIds, npcLedger, indexEntries);
         const label = attempt === 0 ? '' : ' (retry)';
 
         console.log(`[CombinedSeal] Generating summary + divergences${label}...`, {

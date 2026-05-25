@@ -222,6 +222,26 @@ export function createArchiveRouter() {
         res.json(entries);
     }));
 
+    // Patch witness data on specific scenes (applied after seal audit corrections)
+    router.patch('/api/campaigns/:id/archive/witnesses', wrapAsync((req, res) => {
+        const { patches } = req.body;
+        if (!Array.isArray(patches)) {
+            return res.status(400).json({ error: 'patches must be an array' });
+        }
+        const idxp = archiveIndexPath(req.params.id);
+        const entries = readJson(idxp, []);
+        for (const patch of patches) {
+            if (!patch.sceneId || !Array.isArray(patch.witnesses)) continue;
+            const entry = entries.find(e => e.sceneId === patch.sceneId);
+            if (entry) {
+                entry.witnesses = patch.witnesses;
+                entry.witnessSource = patch.witnessSource || 'seal_correction';
+            }
+        }
+        writeJson(idxp, entries);
+        res.json({ updated: patches.length });
+    }));
+
     // Fetch full verbatim scenes by comma-separated scene IDs
     router.get('/api/campaigns/:id/archive/scenes', wrapAsync((req, res) => {
         const fp = archivePath(req.params.id);

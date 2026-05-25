@@ -285,7 +285,7 @@ export type ArchiveIndexEntry = {
     keywords: string[];
     npcsMentioned: string[];
     witnesses: string[];
-    witnessSource?: 'header' | 'aux' | 'body' | 'pending' | 'none';
+    witnessSource?: 'header' | 'aux' | 'body' | 'pending' | 'seal_correction' | 'none';
     userSnippet: string;
     keywordStrengths?: Record<string, number>;
     npcStrengths?: Record<string, number>;

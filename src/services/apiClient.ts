@@ -50,6 +50,20 @@ export const api = {
             if (!res.ok) throw new Error('Failed to fetch scenes');
             return res.json();
         },
+        async patchWitnesses(campaignId: string, patches: { sceneId: string; witnesses: string[]; witnessSource: string }[]): Promise<void> {
+            try {
+                const res = await fetch(`${API}/campaigns/${campaignId}/archive/witnesses`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ patches }),
+                });
+                if (!res.ok) {
+                    console.warn('[Archive] Failed to patch witnesses:', res.status);
+                }
+            } catch (err) {
+                console.warn('[Archive] Failed to patch witnesses:', err);
+            }
+        },
     },
     chapters: {
         async list(campaignId: string): Promise<ArchiveChapter[]> {
